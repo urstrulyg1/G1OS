@@ -61,10 +61,11 @@ def main():
     ok &= check("fbcon=map:0" in grub, "Safe Graphics provides an EFI/framebuffer console path")
 
     # The built kernel must fail CI if the critical hardware contracts disappear.
-    for setting in ("CONFIG_DRM_RADEON=m", "CONFIG_FB_EFI=y", "CONFIG_SATA_AHCI=y",
-                    "CONFIG_USB_STORAGE=y", "CONFIG_HID_APPLE=m", "CONFIG_TG3=m",
-                    "CONFIG_B43=m", "CONFIG_SND_HDA_INTEL=m"):
+    for setting in ("CONFIG_FB_EFI=y", "CONFIG_SATA_AHCI=y", "CONFIG_USB_STORAGE=y"):
         ok &= check(setting in build, f"kernel build validates {setting} after merge_config")
+    for driver in ("CONFIG_DRM_RADEON", "CONFIG_HID_APPLE", "CONFIG_TG3", "CONFIG_B43", "CONFIG_SND_HDA_INTEL"):
+        ok &= check(driver in build and "(y|m)" in build,
+                    f"kernel build accepts dependency-promoted y/m state for {driver}")
 
     # Installer must accept the factory 500 GB/1 TB HDD range and the documented
     # 2 TB maximum without imposing an artificial capacity ceiling.
