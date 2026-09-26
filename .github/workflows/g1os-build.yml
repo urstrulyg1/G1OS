@@ -286,7 +286,7 @@ jobs:
           # The marker disk opts the initrd into CI mode; the blank disk is the
           # actual installation target. No host disk can be touched.
           set +e
-          timeout 240s qemu-system-x86_64             -machine q35,accel=tcg             -m 4096             -smp 2             -vga std             -bios /usr/share/OVMF/OVMF_CODE_4M.fd             -drive format=raw,file="$DISK",if=none,id=g1os_target             -device ich9-ahci,id=g1os_sata             -device ide-hd,drive=g1os_target,bus=g1os_sata.2             -drive format=raw,file="$MARKER",if=none,id=g1os_ci_marker             -device ide-hd,drive=g1os_ci_marker,bus=g1os_sata.3             -drive format=raw,file=out/G1OS.iso,if=ide,media=cdrom             -boot d             -serial stdio             -display none             -no-reboot             2>&1 | tee "$LOG"
+          timeout 240s qemu-system-x86_64             -machine q35,accel=tcg             -m 4096             -smp 2             -vga std             -bios /usr/share/OVMF/OVMF_CODE_4M.fd             -drive format=raw,file="$DISK",if=none,id=g1os_target             -device ich9-ahci,id=g1os_sata             -device ide-hd,drive=g1os_target,bus=g1os_sata.2             -drive format=raw,file="$MARKER",if=none,id=g1os_ci_marker             -device ide-hd,drive=g1os_ci_marker,bus=g1os_sata.3             -drive format=raw,file=out/G1OS.iso,if=ide,media=cdrom             -append "rd.maclite=ci-install"             -boot d             -serial stdio             -display none             -no-reboot             2>&1 | tee "$LOG"
           QEMU_RC=${PIPESTATUS[0]}
           set -e
           grep -F "CI installation integration mode enabled" "$LOG" >/dev/null || {
