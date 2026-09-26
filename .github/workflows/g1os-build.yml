@@ -146,6 +146,16 @@ jobs:
           grep -F "artifact_arch=x86_64" out/g1os-kernel-manifest.txt >/dev/null
           grep -F "artifact_format=x86_64-bzImage" out/g1os-kernel-manifest.txt >/dev/null
 
+      - name: Upload kernel failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: G1OS-kernel-failure-diagnostics
+          if-no-files-found: ignore
+          path: |
+            macliteos/out/kernel-build.log
+            macliteos/out/kernel-build/.config
+
       - name: Build initramfs
         working-directory: macliteos
         run: |
