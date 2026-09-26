@@ -81,6 +81,18 @@ jobs:
           set -eu
           sh scripts/audit-production.sh
 
+      - name: Cursor trail end-to-end regression
+        working-directory: macliteos
+        run: |
+          set -eu
+          python3 scripts/test_cursor_trails.py
+
+      - name: Installer logic regression
+        working-directory: macliteos
+        run: |
+          set -eu
+          python3 scripts/test_installer_logic.py
+
       - name: Full userspace runtime regression suite
         working-directory: macliteos
         run: |
