@@ -123,8 +123,23 @@ jobs:
       - name: Build G1OS kernel
         working-directory: macliteos
         run: |
-          set -eu
-          sh scripts/build-kernel.sh
+          set -euo pipefail
+          export G1OS_JOBS=2
+          LOG="$PWD/out/kernel-build.log"
+          rm -f "$LOG"
+          if sh scripts/build-kernel.sh 2>&1 | tee "$LOG"; then
+            true
+          else
+            rc=${PIPESTATUS[0]}
+            {
+              echo "## Kernel build failure diagnostics"
+              echo ""
+              echo '```text'
+              tail -160 "$LOG"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit "$rc"
+          fi
           test -s out/vmlinuz-maclite
           test -s out/g1os-kernel-manifest.txt
           grep -F "G1OS_KERNEL_MANIFEST=1" out/g1os-kernel-manifest.txt >/dev/null
