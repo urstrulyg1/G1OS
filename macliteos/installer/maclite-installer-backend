@@ -180,8 +180,10 @@ if [ "$DRY_RUN" = 1 ]; then
     "12|97|Services" \
     "13|98|Disk Space" \
     "14|99|Installation State"; do
-    oldIFS="$IFS"; IFS='|'; set -- "$spec"; IFS="$oldIFS"
-    verify_check "$1" "$2" "$3" "PASS" "Synthetic CI contract check"
+    IFS='|' read -r n pct domain <<EOF
+$spec
+EOF
+    verify_check "$n" "$pct" "$domain" "PASS" "Synthetic CI contract check"
   done
   emit_state "COMPLETED"
   step 15 100 "All required verification checks passed. Installation Complete."
