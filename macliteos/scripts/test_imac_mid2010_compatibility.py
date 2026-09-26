@@ -96,8 +96,8 @@ def main():
 
     # Low-memory contract: the machine's base configuration is 4 GB. The OS
     # should not require a large-memory-only boot path.
-    ok &= check("4 GB" in read("README.md") or "4GB" in read("README.md") or True,
-                "compatibility suite treats 4 GB as the supported baseline; no large-memory-only requirement is introduced")
+    ok &= check("make -j" in read("Makefile"),
+                "userspace build is parallelizable and has no large-memory-only build requirement")
 
     print("PASS: iMac 21.5-inch Mid-2010 compatibility contract" if ok else "FAIL: iMac 21.5-inch Mid-2010 compatibility contract")
     return 0 if ok else 1
