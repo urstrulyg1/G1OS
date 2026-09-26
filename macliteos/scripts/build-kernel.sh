@@ -42,7 +42,7 @@ done
 
 # Kconfig may promote a module to built-in when dependency resolution requires
 # it. For iMac hardware, y and m are both valid; only n is unacceptable.
-for driver in CONFIG_DRM_RADEON CONFIG_HID_APPLE CONFIG_TG3 CONFIG_B43 CONFIG_SND_HDA_INTEL; do
+for driver in CONFIG_DRM_RADEON CONFIG_HID_APPLE CONFIG_TIGON3 CONFIG_B43 CONFIG_SND_HDA_INTEL; do
   grep -Eq "^$driver=(y|m)$" "$OUT/kernel-build/.config" || {
     echo "ERROR: required iMac hardware driver is disabled: $driver" >&2
     exit 3
