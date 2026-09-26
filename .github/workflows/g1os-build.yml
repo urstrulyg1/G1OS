@@ -54,14 +54,18 @@ jobs:
           sh -n boot/g1os-init
           shellcheck -s sh boot/g1os-init
 
+      - name: Shell syntax and ShellCheck — installer backend
+        working-directory: macliteos
+        run: |
+          set -eu
+          sh -n installer/maclite-installer-backend
+          shellcheck -s sh installer/maclite-installer-backend
+
       - name: Shell syntax and ShellCheck — all remaining scripts
         working-directory: macliteos
         run: |
           set -eu
-          for f in $(find . -type f \( -name '*.sh' -o -path './installer/maclite-install' -o -path './installer/maclite-installer-backend' \)); do
-            case "$f" in
-              ./scripts/audit-installation-contract.sh|./boot/g1os-init) continue ;;
-            esac
+          for f in $(find . -type f \( -name '*.sh' -o -path './installer/maclite-install' \)); do
             sh -n "$f"
             shellcheck -s sh "$f"
           done
