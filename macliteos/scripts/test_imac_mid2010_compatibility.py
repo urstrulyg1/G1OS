@@ -40,7 +40,7 @@ def main():
         "CONFIG_USB_OHCI_HCD=y": "USB 2.0 OHCI",
         "CONFIG_USB_STORAGE=y": "USB storage",
         "CONFIG_HID_APPLE=m": "Apple keyboard/mouse HID",
-        "CONFIG_TG3=m": "Gigabit Ethernet family",
+        "CONFIG_TIGON3=m": "Gigabit Ethernet family",
         "CONFIG_B43=m": "AirPort/Broadcom Wi-Fi family",
         "CONFIG_SND_HDA_INTEL=m": "Intel HDA audio",
         "CONFIG_EFI_STUB=y": "EFI boot",
@@ -63,7 +63,7 @@ def main():
     # The built kernel must fail CI if the critical hardware contracts disappear.
     for setting in ("CONFIG_FB_EFI=y", "CONFIG_SATA_AHCI=y", "CONFIG_USB_STORAGE=y"):
         ok &= check(setting in build, f"kernel build validates {setting} after merge_config")
-    for driver in ("CONFIG_DRM_RADEON", "CONFIG_HID_APPLE", "CONFIG_TG3", "CONFIG_B43", "CONFIG_SND_HDA_INTEL"):
+    for driver in ("CONFIG_DRM_RADEON", "CONFIG_HID_APPLE", "CONFIG_TIGON3", "CONFIG_B43", "CONFIG_SND_HDA_INTEL"):
         ok &= check(driver in build and "(y|m)" in build,
                     f"kernel build accepts dependency-promoted y/m state for {driver}")
 
