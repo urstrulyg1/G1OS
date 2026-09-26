@@ -180,7 +180,7 @@ if [ "$DRY_RUN" = 1 ]; then
     "12|97|Services" \
     "13|98|Disk Space" \
     "14|99|Installation State"; do
-    oldIFS="$IFS"; IFS='|'; set -- $spec; IFS="$oldIFS"
+    oldIFS="$IFS"; IFS='|'; set -- "$spec"; IFS="$oldIFS"
     verify_check "$1" "$2" "$3" "PASS" "Synthetic CI contract check"
   done
   emit_state "COMPLETED"
