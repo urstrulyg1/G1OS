@@ -179,11 +179,37 @@ jobs:
           fi
           echo "PASS: ISO has no leaked staging/host paths."
 
-      - name: Installation contract and destructive-operation safety audit
+      - name: Installation contract static safety audit
         working-directory: macliteos
         run: |
           set -eu
-          sh scripts/audit-installation-contract.sh out/G1OS.iso
+          sh scripts/audit-installation-contract.sh --static-only out/G1OS.iso
+
+      - name: Installer backend synthetic state-machine test
+        working-directory: macliteos
+        timeout-minutes: 2
+        run: |
+          set -eu
+          LOG="$PWD/out/ci-installer-dryrun.log"
+          rm -f "$LOG"
+          timeout 45s sh installer/maclite-installer-backend --target /dev/g1os-ci-dryrun --dry-run --json >"$LOG" 2>&1
+          for state in PREPARING INSTALLING FINALIZING VERIFYING COMPLETED; do
+            grep -F '"state":"'"$state"'"' "$LOG" >/dev/null
+          done
+          ! grep -F '"state":"FAILED"' "$LOG" >/dev/null
+          grep -F '"progress":100' "$LOG" >/dev/null
+          grep -F '"synthetic":true' "$LOG" >/dev/null
+          if sh installer/maclite-installer-backend --target '../escape' --dry-run >/dev/null 2>&1; then
+            echo "ERROR: path traversal target accepted" >&2
+            exit 1
+          fi
+          if sh installer/maclite-installer-backend --unknown-option >/dev/null 2>&1; then
+            echo "ERROR: unknown option accepted" >&2
+            exit 1
+          fi
+          echo "PASS: synthetic installer state machine and fail-closed argument tests"
+
+
 
       - name: Real disk installation integration test (UEFI QEMU)
         working-directory: macliteos
