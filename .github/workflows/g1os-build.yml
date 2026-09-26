@@ -86,6 +86,13 @@ jobs:
           set -eu
           sh scripts/audit-production.sh
 
+      - name: iMac Mid-2010 hardware compatibility gate
+        working-directory: macliteos
+        run: |
+          set -eu
+          python3 scripts/test_imac_mid2010_compatibility.py
+
+
       - name: Cursor trail end-to-end regression
         working-directory: macliteos
         run: |
