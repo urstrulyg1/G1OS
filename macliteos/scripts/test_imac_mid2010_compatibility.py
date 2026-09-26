@@ -96,8 +96,14 @@ def main():
 
     # Low-memory contract: the machine's base configuration is 4 GB. The OS
     # should not require a large-memory-only boot path.
-    ok &= check("make -j" in read("Makefile"),
-                "userspace build is parallelizable and has no large-memory-only build requirement")
+    if bin_path.exists() and bin_path.stat().st_mode & 0o111:
+        r = subprocess.run(
+            ["sh", "-c", "ulimit -v 524288; exec \"$1\" --headless -W 1920 -H 1080 --mode performance --script \"$2\" --shot /tmp/g1os-imac-lowmem.png",
+             "g1os-lowmem", str(bin_path), str(ROOT / "tests" / "scripts" / "cursor.script")],
+            cwd=ROOT, text=True, capture_output=True, timeout=60)
+        ok &= check(r.returncode == 0, "compositor boots at 1920x1080 under a 512 MiB virtual-memory cap (well below the 4 GB baseline)")
+    else:
+        print("INFO: low-memory compositor runtime check deferred until userspace build")
 
     print("PASS: iMac 21.5-inch Mid-2010 compatibility contract" if ok else "FAIL: iMac 21.5-inch Mid-2010 compatibility contract")
     return 0 if ok else 1
