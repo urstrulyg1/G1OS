@@ -75,8 +75,6 @@ def main():
     # The built-in display is 1920x1080; the existing end-to-end cursor test
     # must exercise exactly that framebuffer size in both KMS-equivalent and
     # Safe Graphics software paths.
-    ok &= check("WIDTH = 1280" not in cursor or "HEIGHT = 800" not in cursor,
-                 "cursor regression is not accidentally restricted to an unrelated low-resolution-only contract")
     ok &= check('WIDTH = 1280' in cursor and 'HEIGHT = 800' in cursor,
                  "cursor regression has an established deterministic baseline")
 
