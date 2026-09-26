@@ -112,6 +112,14 @@ jobs:
           sh scripts/run-tests.sh
 
 
+      - name: Kernel hardware contract preflight
+        working-directory: macliteos
+        run: |
+          set -eu
+          for setting in             CONFIG_DRM_RADEON=m CONFIG_SATA_AHCI=y CONFIG_USB_EHCI_HCD=y             CONFIG_USB_OHCI_HCD=y CONFIG_USB_STORAGE=y CONFIG_HID_APPLE=m             CONFIG_TG3=m CONFIG_B43=m CONFIG_SND_HDA_INTEL=m             CONFIG_EFI_STUB=y CONFIG_FB_EFI=y CONFIG_FRAMEBUFFER_CONSOLE=y             CONFIG_EXT4_FS=y CONFIG_VFAT_FS=y; do
+            grep -qx "$setting" kernel/g1os-x86_64.fragment
+          done
+
       - name: Build G1OS kernel
         working-directory: macliteos
         run: |
