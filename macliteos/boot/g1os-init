@@ -290,7 +290,8 @@ if command -v blkid >/dev/null 2>&1; then
     for dev in /dev/sd[a-z] /dev/sd[a-z][0-9]* /dev/nvme*n1 /dev/nvme*n1p* /dev/vd[a-z] /dev/vd[a-z][0-9]* /dev/mmcblk*; do
         [ -b "$dev" ] || continue
         label=$(blkid -s LABEL -o value "$dev" 2>/dev/null || true)
-        if [ "$label" = "G1OS_CI" ]; then
+        record=$(blkid "$dev" 2>/dev/null || true)
+        if [ "$label" = "G1OS_CI" ] || printf '%s\n' "$record" | grep -F 'LABEL="G1OS_CI"' >/dev/null 2>&1; then
             CI_MARKER_DEV="$dev"
             CI_INSTALL=1
             status OK "CI marker detected: $CI_MARKER_DEV (LABEL=G1OS_CI)"
