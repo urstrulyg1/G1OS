@@ -55,7 +55,7 @@ def main():
     # Both listed Radeon configurations must use the same radeon/KMS contract.
     ok &= check("CONFIG_DRM_RADEON=m" in frag, "both Radeon HD 4670 (256 MB) and HD 5670 (512 MB) use the radeon DRM module contract")
     ok &= check("radeon.modeset=1" in grub, "normal installed boot enables Radeon KMS")
-    ok &= check("radeon.modeset=1" in init, "live/installed boot logic preserves Radeon KMS")
+    ok &= check("Normal Graphics selected (Radeon KMS requested)" in init, "live/installed boot logic explicitly preserves the normal Radeon KMS path")
     ok &= check("maclite.gl=off" in grub, "Safe Graphics explicitly disables GL compositing")
     ok &= check("MICA_GL=off" in init, "Safe Graphics propagates software-compositing mode")
     ok &= check("fbcon=map:0" in grub, "Safe Graphics provides an EFI/framebuffer console path")
