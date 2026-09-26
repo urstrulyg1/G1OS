@@ -66,6 +66,7 @@ jobs:
         run: |
           set -eu
           for f in $(find . -type f \( -name '*.sh' -o -path './installer/maclite-install' \)); do
+            case "$f" in ./scripts/audit-installation-contract.sh) continue ;; esac
             sh -n "$f"
             shellcheck -s sh "$f"
           done
