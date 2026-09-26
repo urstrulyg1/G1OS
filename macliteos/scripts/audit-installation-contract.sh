@@ -22,7 +22,7 @@ has "$BACKEND" "target disk is too small" "minimum target capacity check is pres
 has "$BACKEND" "require_partition_nodes()" "partition-node readiness check is present" "partition-node readiness check is missing"
 has "$BACKEND" "read_block_tag" "post-format UUID/PARTUUID verification is present" "post-format block identity verification is missing"
 has "$BACKEND" "validate_repair_layout" "repair-mode layout validation is present" "repair-mode layout validation is missing"
-has "$BACKEND" 'CURRENT_STATE="VERIFYING"' "authoritative VERIFYING state is present" "authoritative VERIFYING state is missing"
+has "$BACKEND" 'emit_state "VERIFYING"' "authoritative VERIFYING state is present" "authoritative VERIFYING state is missing"
 has "$BACKEND" "COMPLETED" "authoritative COMPLETED state is present" "authoritative COMPLETED state is missing"
 if grep -F "waitpid(INSTALL_PID, NULL, 0)" "$GUI" >/dev/null 2>&1; then fail "GUI contains an unbounded backend wait"; else pass "GUI backend cancellation is bounded"; fi
 has "$GUI" "stop_backend" "GUI has explicit backend shutdown handling" "GUI backend shutdown handling is missing"
