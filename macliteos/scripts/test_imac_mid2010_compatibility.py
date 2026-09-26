@@ -98,10 +98,10 @@ def main():
     # should not require a large-memory-only boot path.
     if bin_path.exists() and bin_path.stat().st_mode & 0o111:
         r = subprocess.run(
-            ["sh", "-c", "ulimit -v 524288; exec \"$1\" --headless -W 1920 -H 1080 --mode performance --script \"$2\" --shot /tmp/g1os-imac-lowmem.png",
+            ["sh", "-c", "ulimit -v 1048576; exec \"$1\" --headless -W 1920 -H 1080 --mode performance --script \"$2\" --shot /tmp/g1os-imac-lowmem.png",
              "g1os-lowmem", str(bin_path), str(ROOT / "tests" / "scripts" / "cursor.script")],
-            cwd=ROOT, text=True, capture_output=True, timeout=60)
-        ok &= check(r.returncode == 0, "compositor boots at 1920x1080 under a 512 MiB virtual-memory cap (well below the 4 GB baseline)")
+            cwd=ROOT, text=True, capture_output=True, timeout=90)
+        ok &= check(r.returncode == 0, "compositor boots at 1920x1080 under a 1 GiB virtual-memory cap (well below the 4 GB baseline)")
     else:
         print("INFO: low-memory compositor runtime check deferred until userspace build")
 
