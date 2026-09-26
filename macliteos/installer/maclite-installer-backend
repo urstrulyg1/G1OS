@@ -284,9 +284,15 @@ safe_mktemp_dir() {
   fi
 }
 
-MODEL=$(cat "/sys/block/$TARGET/device/model" 2>/dev/null || echo "unknown")
-SERIAL=$(cat "/sys/block/$TARGET/device/serial" 2>/dev/null || echo "unknown")
-SECTORS=$(cat "/sys/block/$TARGET/size" 2>/dev/null || echo 0)
+if [ "$DRY_RUN" = 1 ]; then
+  MODEL="G1OS-CI-DryRun"
+  SERIAL="G1OS-CI-DryRun"
+  SECTORS=25165824
+else
+  MODEL=$(cat "/sys/block/$TARGET/device/model" 2>/dev/null || echo "unknown")
+  SERIAL=$(cat "/sys/block/$TARGET/device/serial" 2>/dev/null || echo "unknown")
+  SECTORS=$(cat "/sys/block/$TARGET/size" 2>/dev/null || echo 0)
+fi
 case "$SECTORS" in ''|*[!0-9]*) fail "target capacity is not a valid sysfs sector count" ;; esac
 [ "$SECTORS" -gt 0 ] || fail "target reports zero capacity"
 SIZE_GB=$((SECTORS * 512 / 1000 / 1000 / 1000))
