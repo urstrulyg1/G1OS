@@ -261,7 +261,10 @@ if [ "$HAS_ROOT_PARAM" -eq 1 ]; then
         : > "$INSTALLED_COMP_LOG"
         chroot /mnt /usr/bin/mica-comp --session --backend "$BACKEND" >>"$INSTALLED_COMP_LOG" 2>&1 &
         COMP_PID=$!
-        # mica-comp runs inside the installed-root chroot, so its runtime socket\n        # lives under the mounted root, not the initramfs host namespace.\n        # Check the same socket path that mica-comp reports in its ready log.\n        COMP_SOCK="/mnt${XDG_RUNTIME_DIR}/mica-comp.sock"
+        # mica-comp runs inside the installed-root chroot, so its runtime socket
+        # lives under the mounted root, not the initramfs host namespace.
+        # Check the same socket path that mica-comp reports in its ready log.
+        COMP_SOCK="/mnt${XDG_RUNTIME_DIR}/mica-comp.sock"
         COMP_READY=0
         COMP_ATTEMPT=1
         # TCG guest logs reached mica-comp ready just after 20 seconds; keep a
