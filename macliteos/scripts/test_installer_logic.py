@@ -151,6 +151,12 @@ def test_partition_layout():
     assert boot_bytes == 268435456, "MACLITE_BOOT must be 256 MiB"
     assert data_bytes == 4294967296, "MACLITE_DATA must be 4 GiB"
     assert base_bytes > 0, "MACLITE_BASE must have positive remaining capacity"
+    backend = pathlib.Path("installer/maclite-installer-backend").read_text()
+    bios_grub = pathlib.Path("boot/grub-bios.cfg").read_text()
+    assert 'mkfs.vfat -F 32 -n MACLITEBOOT' in backend
+    assert 'mkdosfs -F 32 -n MACLITEBOOT' in backend
+    assert "--label MACLITEBOOT" in bios_grub
+    assert len("MACLITEBOOT") <= 11, "FAT volume labels must fit the 11-character limit"
     print("PASS: GPT partition geometry and label allocation")
 
 def test_uuid_boot_binding():
@@ -376,6 +382,7 @@ def test_kernel_lifecycle_and_verification():
     assert '$BOOT_MNT/boot/initrd-g1os.img' in backend_src, "Backend must install initramfs to target /boot/initrd-g1os.img"
     assert 'linux /boot/vmlinuz-g1os' in backend_src, "Target GRUB configuration must boot /boot/vmlinuz-g1os"
     assert 'initrd /boot/initrd-g1os.img' in backend_src, "Target GRUB configuration must boot /boot/initrd-g1os.img"
+    assert "console=ttyS0,115200" in backend_src, "Installed kernel must send boot milestones to QEMU serial"
 
     # 5. Check 4 authoritative verification
     assert "Verification FAIL: real G1OS kernel vmlinuz-g1os missing or empty" in backend_src, \
@@ -456,10 +463,74 @@ def test_partition_node_resolution_resilience():
     assert 'while [ "$attempt" -le 15 ]; do' in backend_src, "require_partition_nodes must poll up to 15 attempts"
     assert "/sys/class/block/" in backend_src, "require_partition_nodes must check sysfs for kernel-registered partitions"
     assert "mknod " in backend_src, "require_partition_nodes must feature mknod fallback"
-    assert "udevadm settle" in backend_src, "Backend must trigger udevadm settle"
+    assert "udevadm settle" not in backend_src, "custom PID 1 does not run udevd; settling its queue can block device discovery"
+    assert 'if command -v mdev >/dev/null 2>&1; then' in backend_src, "partition discovery must rescan mdev nodes"
     assert "partx" in backend_src, "Backend must attempt partx reread"
     assert "mknod" in initrd_script, "make-initrd.sh must stage mknod into initramfs"
-    print("PASS: partition node resolution resilience, sysfs discovery, and mknod fallback")
+    print("PASS: bounded partition discovery uses sysfs/mdev without waiting on absent udevd")
+
+
+def test_real_partition_tools_in_initramfs():
+    """Do not let BusyBox stubs stand in for real installer disk utilities."""
+    initrd_script = pathlib.Path("scripts/make-initrd.sh").read_text()
+    assert 'for partition_tool in blkid fdisk sfdisk; do' in initrd_script
+    assert 'cp -L "$tool_path" "$W/usr/bin/$partition_tool"' in initrd_script
+    assert '[ -x "$W/usr/bin/sfdisk" ]' in initrd_script
+    assert '"$W/usr/bin/sfdisk" --version' in initrd_script
+    assert '[ -x "$W/usr/bin/blkid" ]' in initrd_script
+    assert '"$W/usr/bin/blkid" --version' in initrd_script
+    assert 'for opt_applet in mknod mdev partx sfdisk' not in initrd_script
+    assert 'for filesystem_tool in mkfs.vfat mkdosfs mkfs.ext4 mke2fs; do' in initrd_script
+    assert '[ -x "$W/usr/bin/mkfs.ext4" ] || [ -x "$W/usr/bin/mke2fs" ]' in initrd_script
+    assert '[ -x "$W/usr/bin/mkfs.vfat" ] || [ -x "$W/usr/bin/mkdosfs" ]' in initrd_script
+    assert "touch chmod ln" in initrd_script, "installer runtime must include chmod and ln applets"
+    print("PASS: initramfs stages and execute-checks real partition and filesystem tools")
+
+
+def test_ext4_retry_state_is_bounded():
+    """Prevent nested device refresh from resetting the ext4 formatter retry counter."""
+    backend = pathlib.Path("installer/maclite-installer-backend").read_text()
+    rootfs_backend = pathlib.Path("rootfs/usr/bin/maclite-installer-backend").read_text()
+    formatter = backend.split("format_ext4_partition() {", 1)[1].split("\n}", 1)[0]
+
+    assert backend == rootfs_backend
+    assert 'format_attempt=1' in formatter
+    assert 'while [ "$format_attempt" -le 3 ]; do' in formatter
+    assert 'format_attempt=$((format_attempt + 1))' in formatter
+    assert '\n  attempt=' not in formatter, "formatter must not share require_partition_nodes' global attempt variable"
+    assert '\n  part="$2"' not in formatter, "formatter partition argument must not be clobbered by nested partition scans"
+    print("PASS: nested partition refresh cannot reset or redirect bounded ext4 retries")
+
+
+def test_boot_readiness_milestones():
+    """Require serial progress markers through the actual graphical installer readiness gate."""
+    g1os_init = pathlib.Path("boot/g1os-init").read_text()
+    qemu_test = pathlib.Path("scripts/qemu-boot-test.py").read_text()
+    grub_cfg = pathlib.Path("boot/grub-efi.cfg").read_text()
+    make_iso = pathlib.Path("scripts/make-iso.sh").read_text()
+    milestones = (
+        "kernel-start", "initramfs-start", "udev-start", "udev-ready",
+        "rootfs-mounted", "disks-ready", "services-start", "ui-start", "ready",
+    )
+    for milestone in milestones:
+        assert f'boot_milestone {milestone}' in g1os_init, f"missing boot milestone: {milestone}"
+    assert "G1OS_READY" in g1os_init, "UI readiness must have an explicit serial success token"
+    assert 'status OK "Graphical installer ready:' in g1os_init, "ready token must follow the UI health check"
+    assert "printf '<6>G1OS_BOOT: %s\\n' \"$milestone\" >/dev/kmsg" in g1os_init
+    assert 'tail -n +1 -f /run/g1os/ci-installer.log >/dev/ttyS0' in g1os_init, "CI backend progress must reach serial"
+    assert 'while [ "$COMP_ATTEMPT" -le 30 ]; do' in g1os_init, "installed compositor readiness must be bounded"
+    assert 'grep -F "mica-comp ready:" "$INSTALLED_COMP_LOG"' in g1os_init
+    assert 'Installed G1OS compositor IPC endpoint ready:' in g1os_init
+    assert 'boot_milestone ready' in g1os_init, "installed boot must emit readiness only after compositor IPC"
+    assert 'boot_milestone graphics-safe' in g1os_init and 'boot_milestone graphics-normal' in g1os_init
+    assert 'terminal_output --append serial' in grub_cfg and 'terminal_input --append serial' in grub_cfg
+    assert 'serial terminal normal' in make_iso, "EFI GRUB image must contain serial-terminal modules"
+    assert 'if not menu_selected and "G1OS (Safe Graphics - Default" in serial_text' in qemu_test
+    assert 'qmp.key("down")' in qemu_test and 'qmp.key("ret")' in qemu_test
+    assert 'server=on,wait=on' in qemu_test and 'serial_socket.recv' in qemu_test, "QEMU must stream live serial output"
+    assert 'missing_ordered_stages' in qemu_test and 'stall_timeout' in qemu_test, "QEMU must enforce ordered milestones and detect stalled output"
+    assert 'qmp.command("quit")' in qemu_test, "successful readiness must shut QEMU down cleanly"
+    print("PASS: serial boot milestones and explicit G1OS_READY UI gate")
 
 
 def test_partitioning_fallback_and_repair_resilience():
@@ -531,6 +602,9 @@ def main():
     test_iso_assembly_artifact_paths()
     test_findmnt_resilience_and_cursor_blit_integrity()
     test_partition_node_resolution_resilience()
+    test_real_partition_tools_in_initramfs()
+    test_ext4_retry_state_is_bounded()
+    test_boot_readiness_milestones()
     test_partitioning_fallback_and_repair_resilience()
     test_iso_clean_staging_and_elf_scan()
     test_production_safety_gaps()

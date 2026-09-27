@@ -411,10 +411,7 @@ require_partition_nodes() {
     if [ "$all_present" = 1 ]; then
       return 0
     fi
-    # If device nodes are delayed, trigger available rescan/settle mechanisms
-    if command -v udevadm >/dev/null 2>&1; then
-      udevadm settle --timeout=1 2>/dev/null || true
-    fi
+    # G1OS PID 1 uses mdev, not udevd; discover nodes from sysfs directly.
     if command -v mdev >/dev/null 2>&1; then
       mdev -s 2>/dev/null || true
     fi
@@ -436,9 +433,6 @@ require_partition_nodes() {
 refresh_partition_devices() {
   [ "$DRY_RUN" = 1 ] && return 0
   sync
-  if command -v udevadm >/dev/null 2>&1; then
-    udevadm settle --timeout=5 2>/dev/null || true
-  fi
   if command -v partx >/dev/null 2>&1; then
     partx -u "$DEV" 2>/dev/null || partx -a "$DEV" 2>/dev/null || true
   fi
@@ -446,34 +440,34 @@ refresh_partition_devices() {
 }
 
 format_ext4_partition() {
-  label="$1"
-  part="$2"
-  attempt=1
-  while [ "$attempt" -le 3 ]; do
+  format_label="$1"
+  format_partition="$2"
+  format_attempt=1
+  while [ "$format_attempt" -le 3 ]; do
     if [ "$DRY_RUN" = 1 ]; then
       return 0
     fi
     if command -v mkfs.ext4 >/dev/null 2>&1; then
-      echo "+ mkfs.ext4 -F -L $label $part"
-      if mkfs.ext4 -F -L "$label" "$part"; then
+      echo "+ mkfs.ext4 -F -L $format_label $format_partition"
+      if mkfs.ext4 -F -L "$format_label" "$format_partition"; then
         return 0
       else
-        status=$?
+        format_status=$?
       fi
     else
-      echo "+ mke2fs -t ext4 -F -L $label $part"
-      if mke2fs -t ext4 -F -L "$label" "$part"; then
+      echo "+ mke2fs -t ext4 -F -L $format_label $format_partition"
+      if mke2fs -t ext4 -F -L "$format_label" "$format_partition"; then
         return 0
       else
-        status=$?
+        format_status=$?
       fi
     fi
-    echo "WARNING: ext4 formatting failed for $part (attempt $attempt/3, exit $status); refreshing partition devices." >&2
+    echo "WARNING: ext4 formatting failed for $format_partition (attempt $format_attempt/3, exit $format_status); refreshing partition devices." >&2
     refresh_partition_devices
     sleep 1
-    attempt=$((attempt + 1))
+    format_attempt=$((format_attempt + 1))
   done
-  fail "unable to format $part as ext4 after 3 attempts"
+  fail "unable to format $format_partition as ext4 after 3 attempts"
 }
 
 # Detect partitioning utility
@@ -667,9 +661,6 @@ if [ "$REPAIR_MODE" = 0 ]; then
     else
       fail "cannot refresh kernel partition table: neither partprobe nor blockdev is available"
     fi
-    if command -v udevadm >/dev/null 2>&1; then
-      udevadm settle --timeout=3 2>/dev/null || true
-    fi
     require_partition_nodes
   fi
 
@@ -677,9 +668,9 @@ if [ "$REPAIR_MODE" = 0 ]; then
   save_state "RUNNING" "INSTALLING" 40 "Formatting fresh filesystems"
   if [ "$DRY_RUN" = 0 ]; then
     if command -v mkfs.vfat >/dev/null 2>&1; then
-      run mkfs.vfat -F 32 -n MACLITE_BOOT "$DEV_BOOT" 2>/dev/null || run mkfs.vfat -n MACLITE_BOOT "$DEV_BOOT"
+      run mkfs.vfat -F 32 -n MACLITEBOOT "$DEV_BOOT"
     else
-      run mkdosfs -F 32 -n MACLITE_BOOT "$DEV_BOOT" 2>/dev/null || run mkdosfs -n MACLITE_BOOT "$DEV_BOOT"
+      run mkdosfs -F 32 -n MACLITEBOOT "$DEV_BOOT"
     fi
     refresh_partition_devices
     format_ext4_partition MACLITE_DATA "$DEV_DATA"
@@ -811,22 +802,22 @@ set root=(\$boot)
 
 menuentry "G1OS" {
   search --no-floppy --fs-uuid --set=boot $BOOT_UUID
-  linux /boot/vmlinuz-g1os root=UUID=$BASE_UUID ro rd.maclite=1 acpi_backlight=native radeon.modeset=1 radeon.uvd=1 b43.fwok=1 reboot=pci panic=0
+  linux /boot/vmlinuz-g1os root=UUID=$BASE_UUID ro rd.maclite=1 console=tty0 console=ttyS0,115200 acpi_backlight=native radeon.modeset=1 radeon.uvd=1 b43.fwok=1 reboot=pci panic=0
   initrd /boot/initrd-g1os.img
 }
 menuentry "G1OS Safe Graphics (Software Compositing)" {
   search --no-floppy --fs-uuid --set=boot $BOOT_UUID
-  linux /boot/vmlinuz-g1os root=UUID=$BASE_UUID ro rd.maclite=1 maclite.gl=off radeon.modeset=1 fbcon=map:0 acpi_backlight=native reboot=pci panic=0
+  linux /boot/vmlinuz-g1os root=UUID=$BASE_UUID ro rd.maclite=1 maclite.gl=off console=tty0 console=ttyS0,115200 radeon.modeset=1 fbcon=map:0 acpi_backlight=native reboot=pci panic=0
   initrd /boot/initrd-g1os.img
 }
 menuentry "G1OS Safe Graphics (Verbose Debug)" {
   search --no-floppy --fs-uuid --set=boot $BOOT_UUID
-  linux /boot/vmlinuz-g1os root=UUID=$BASE_UUID ro rd.maclite=1 maclite.gl=off radeon.modeset=1 fbcon=map:0 console=tty0 earlycon debug ignore_loglevel acpi_backlight=native reboot=pci panic=0
+  linux /boot/vmlinuz-g1os root=UUID=$BASE_UUID ro rd.maclite=1 maclite.gl=off radeon.modeset=1 fbcon=map:0 console=tty0 console=ttyS0,115200 earlycon debug ignore_loglevel acpi_backlight=native reboot=pci panic=0
   initrd /boot/initrd-g1os.img
 }
 menuentry "G1OS Recovery Shell" {
   search --no-floppy --fs-uuid --set=boot $BOOT_UUID
-  linux /boot/vmlinuz-g1os root=UUID=$BASE_UUID ro rd.maclite=recovery nomodeset radeon.modeset=0 console=tty0 earlycon reboot=pci panic=0
+  linux /boot/vmlinuz-g1os root=UUID=$BASE_UUID ro rd.maclite=recovery nomodeset radeon.modeset=0 console=tty0 console=ttyS0,115200 earlycon reboot=pci panic=0
   initrd /boot/initrd-g1os.img
 }
 EOF
@@ -919,6 +910,7 @@ if [ "$DRY_RUN" = 0 ]; then
   grep -F "root=UUID=$BASE_UUID" "$VERIFY_BOOT/EFI/BOOT/grub.cfg" >/dev/null || \
     fail "Verification FAIL: GRUB root parameter does not match root UUID $BASE_UUID"
   if grep -Eq '/dev/(sd|nvme|mmcblk)' "$VERIFY_BOOT/EFI/BOOT/grub.cfg"; then
+    grep -En '/dev/(sd|nvme|mmcblk)' "$VERIFY_BOOT/EFI/BOOT/grub.cfg" >&2 || true
     fail "Verification FAIL: GRUB contains unstable device devnodes instead of UUID"
   fi
   [ -s "$VERIFY_BOOT/.disk_label" ] || fail "Verification FAIL: Apple Option Boot .disk_label missing"

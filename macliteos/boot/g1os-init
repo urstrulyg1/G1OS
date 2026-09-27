@@ -26,6 +26,24 @@ status() {
     printf '%s|%s|%s\n' "$(now_ms)" "$state" "$*" >> "$STATE"
     emit "[$state] $*"
 }
+boot_milestone() {
+    milestone="$1"
+    printf '%s|%s\n' "$(now_ms)" "$milestone" >> "$STATE"
+    printf 'G1OS_BOOT: %s\n' "$milestone" >> "$LOG"
+    if [ -w /dev/kmsg ]; then
+        printf '<6>G1OS_BOOT: %s\n' "$milestone" >/dev/kmsg 2>/dev/null || true
+    elif [ -e /dev/ttyS0 ]; then
+        printf 'G1OS_BOOT: %s\n' "$milestone" >/dev/ttyS0 2>/dev/null || true
+    fi
+    if [ "$milestone" = ready ]; then
+        printf 'G1OS_READY\n' >> "$LOG"
+        if [ -w /dev/kmsg ]; then
+            printf '<6>G1OS_READY\n' >/dev/kmsg 2>/dev/null || true
+        elif [ -e /dev/ttyS0 ]; then
+            printf 'G1OS_READY\n' >/dev/ttyS0 2>/dev/null || true
+        fi
+    fi
+}
 failure_screen() {
     message="$*"
     emit "[FAILURE SCREEN] $message"
@@ -35,6 +53,7 @@ failure_screen() {
 }
 fatal() {
     message="$*"
+    boot_milestone failed
     emit ""
     emit "============================================================"
     emit "[FAIL] $message"
@@ -100,6 +119,11 @@ mount -t sysfs sysfs /sys || fatal "cannot mount /sys"
 if ! mount -t devtmpfs devtmpfs /dev 2>/dev/null; then
     mount -t tmpfs -o mode=0755 tmpfs /dev || fatal "cannot mount /dev"
 fi
+boot_milestone kernel-start
+boot_milestone initramfs-start
+boot_milestone udev-start
+if command -v mdev >/dev/null 2>&1; then mdev -s 2>/dev/null || true; fi
+boot_milestone udev-ready
 CMDLINE=$(cat /proc/cmdline 2>/dev/null || true)
 status OK "Kernel started"
 status OK "Initrd entrypoint /init started"
@@ -109,8 +133,10 @@ case " $CMDLINE " in *nomodeset*|*radeon.modeset=0*|*maclite.gl=off*) SAFE=1 ;; 
 if [ "$SAFE" = 1 ]; then
     export MICA_GL=off
     status OK "Safe Graphics selected (software compositor; KMS preferred, fbdev fallback)"
+    boot_milestone graphics-safe
 else
     status OK "Normal Graphics selected (Radeon KMS requested)"
+    boot_milestone graphics-normal
 fi
 for mod in tg3 b43 snd-hda-intel; do
     if modprobe "$mod" >/dev/null 2>&1; then
@@ -220,14 +246,49 @@ if [ "$HAS_ROOT_PARAM" -eq 1 ]; then
         status OK "Persistent data filesystem mounted: $DATA_DEV"
 
         status OK "Installed root filesystem verified"
+        boot_milestone rootfs-mounted
+        boot_milestone disks-ready
         silence_graphical_console
         handoff_graphical_console
         BACKEND=auto
         if [ "$SAFE" = 1 ]; then
             export MICA_GL=off
         fi
+        boot_milestone services-start
+        boot_milestone ui-start
         status OK "Starting installed G1OS compositor ($BACKEND)"
-        exec chroot /mnt /usr/bin/mica-comp --session --backend "$BACKEND"
+        INSTALLED_COMP_LOG=/run/g1os/installed-comp.log
+        : > "$INSTALLED_COMP_LOG"
+        chroot /mnt /usr/bin/mica-comp --session --backend "$BACKEND" >>"$INSTALLED_COMP_LOG" 2>&1 &
+        COMP_PID=$!
+        COMP_SOCK="$XDG_RUNTIME_DIR/mica-comp.sock"
+        COMP_READY=0
+        COMP_ATTEMPT=1
+        # TCG guest logs reached mica-comp ready just after 20 seconds; keep a
+        # bounded margin while still failing well before the CI stall watchdog.
+        while [ "$COMP_ATTEMPT" -le 30 ]; do
+            if [ -S "$COMP_SOCK" ] && grep -F "mica-comp ready:" "$INSTALLED_COMP_LOG" >/dev/null 2>&1; then
+                COMP_READY=1
+                break
+            fi
+            if ! kill -0 "$COMP_PID" 2>/dev/null; then
+                RC=0; wait "$COMP_PID" || RC=$?
+                tail -100 "$INSTALLED_COMP_LOG" >/dev/ttyS0 2>/dev/null || true
+                fatal "installed compositor exited before IPC readiness (exit code $RC)"
+            fi
+            sleep 1
+            COMP_ATTEMPT=$((COMP_ATTEMPT + 1))
+        done
+        if [ "$COMP_READY" != 1 ]; then
+            tail -100 "$INSTALLED_COMP_LOG" >/dev/ttyS0 2>/dev/null || true
+            fatal "installed compositor IPC endpoint did not become ready within 30 seconds"
+        fi
+        status OK "Installed G1OS compositor IPC endpoint ready: $COMP_SOCK"
+        boot_milestone ready
+        while kill -0 "$COMP_PID" 2>/dev/null; do sleep 1; done
+        RC=0; wait "$COMP_PID" || RC=$?
+        tail -100 "$INSTALLED_COMP_LOG" >/dev/ttyS0 2>/dev/null || true
+        fatal "installed compositor exited after readiness (exit code $RC)"
     else
         fatal "installed root device specified in command line could not be resolved after 15 seconds: $CMDLINE"
     fi
@@ -265,6 +326,7 @@ grep -F "G1OS_BOOT_MANIFEST=1" /run/live/boot/g1os-boot-manifest.txt >/dev/null 
 status OK "Live SquashFS located; authoritative kernel payload verified"
 mount -t squashfs -o ro,loop /run/live/live/maclite-base.sqfs /run/maclite-base || fatal "cannot mount live SquashFS (loop/squashfs path failed)"
 status OK "Live base filesystem mounted"
+boot_milestone rootfs-mounted
 
 status OK "Live base filesystem mounted"
 if [ -d /run/maclite-base/etc ]; then cp -a /run/maclite-base/etc/. /etc/ || fatal "cannot import base /etc"; fi
@@ -315,10 +377,19 @@ if [ "$CI_INSTALL" = 1 ]; then
         done
         [ -n "$CI_TARGET" ] || fatal "CI integration disk was not detected"
         status OK "CI integration target detected: $CI_TARGET"
+        boot_milestone disks-ready
+        : > /run/g1os/ci-installer.log
+        tail -n +1 -f /run/g1os/ci-installer.log >/dev/ttyS0 2>&1 &
+        BACKEND_LOG_PID=$!
+        boot_milestone ci-install-start
         if /usr/bin/maclite-installer-backend --target "$CI_TARGET" --json >/run/g1os/ci-installer.log 2>&1; then
+            kill "$BACKEND_LOG_PID" 2>/dev/null || true
+            wait "$BACKEND_LOG_PID" 2>/dev/null || true
             status OK "CI real installation backend completed successfully"
         else
             RC=$?
+            kill "$BACKEND_LOG_PID" 2>/dev/null || true
+            wait "$BACKEND_LOG_PID" 2>/dev/null || true
             tail -200 /run/g1os/ci-installer.log >/dev/ttyS0 2>/dev/null || true
             fatal "CI real installation backend failed with exit code $RC"
         fi
@@ -326,6 +397,7 @@ if [ "$CI_INSTALL" = 1 ]; then
         status OK "CI installation reached authoritative COMPLETED state"
         sync
         status OK "CI installation disk synchronized; integration test complete"
+        boot_milestone ci-install-ready
         if command -v reboot >/dev/null 2>&1; then reboot -f
         else halt -f
         fi
@@ -342,6 +414,8 @@ fi
 BACKEND=auto
 if [ "$SAFE" = 1 ]; then export MICA_GL=off; fi
 status OK "Graphical installer runtime present"
+boot_milestone disks-ready
+boot_milestone services-start
 silence_graphical_console
 status RUNNING "Starting compositor ($BACKEND)"
 MICA_LOG=/run/g1os/mica-comp.log
@@ -368,6 +442,7 @@ status OK "Compositor IPC endpoint ready: $SOCK"
 handoff_graphical_console
 status OK "Graphical console handoff complete; kernel/fbcon text cannot paint over compositor framebuffer"
 status RUNNING "Starting graphical G1OS installer"
+boot_milestone ui-start
 export MICA_LOG=/run/g1os/mica-installer.log
 : > "$MICA_LOG"
 /usr/bin/mica-installer >>"$MICA_LOG" 2>&1 &
@@ -385,6 +460,7 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
 done
 [ "$UI_READY" = 1 ] || fatal "graphical installer is alive but its compositor surface is not healthy; see /run/g1os/ui-health.log and $MICA_LOG"
 status OK "Graphical installer ready: compositor responsive and installer surface present"
+boot_milestone ready
 while :; do
     if ! kill -0 "$COMP_PID" 2>/dev/null; then
         RC=1; wait "$COMP_PID" || RC=$?

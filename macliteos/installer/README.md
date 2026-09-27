@@ -24,6 +24,6 @@ The CLI installer prints detected drives, protects the live USB drive, requests 
 ## Partition Layout Created
 | Partition | Size | Filesystem | Purpose |
 | :--- | :--- | :--- | :--- |
-| `MACLITE_BOOT` | 256 MB | FAT32 | Apple EFI bootloader (`BOOTX64.EFI`), GRUB, kernel, `.disk_label` |
+| `MACLITE_BOOT` | 256 MB | FAT32 (`MACLITEBOOT` volume label) | Apple EFI bootloader (`BOOTX64.EFI`), GRUB, kernel, `.disk_label` |
 | `MACLITE_DATA` | 4 GB+ | ext4 | Persistent writable user data (`/var/data`, `/home`) |
 | `MACLITE_BASE` | Remaining | ext4/squashfs | Immutable read-only system base (`/`) |

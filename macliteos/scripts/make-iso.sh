@@ -178,7 +178,7 @@ cp "$INITRD_MANIFEST" "$ST/boot/g1os-initrd-manifest.txt"
 cp boot/grub-efi.cfg "$ST/boot/grub.cfg"
 mkdir -p "$ST/EFI/BOOT" "$ST/boot/grub"
 if command -v grub-mkimage >/dev/null 2>&1; then
-  grub-mkimage -O x86_64-efi -o "$ST/boot/bootx64.efi" -p /boot part_gpt part_msdos fat iso9660 linux search normal
+  grub-mkimage -O x86_64-efi -o "$ST/boot/bootx64.efi" -p /boot part_gpt part_msdos fat iso9660 linux search serial terminal normal
 else
   found_loader=0
   for cand in "boot/bootx64.efi" "out/bootx64.efi" "/Volumes/G1OS/EFI/BOOT/BOOTX64.EFI" "../releases/bootx64.efi"; do

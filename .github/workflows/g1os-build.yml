@@ -299,17 +299,44 @@ jobs:
               sudo umount /mnt/g1os-ci-efi 2>/dev/null || true
               sudo losetup -d "$LOOP_DEV" 2>/dev/null || true
             fi
+            qemu-img info "$DISK" > out/qemu-install-disk-info.txt 2>&1 || true
+            sfdisk --dump "$DISK" > out/qemu-install-partitions.txt 2>&1 || true
+            file "$DISK" "$MARKER" > out/qemu-install-filesystems.txt 2>&1 || true
             rm -f "$DISK" "$MARKER"
           }
           trap cleanup EXIT HUP INT TERM
 
-          # Boot the real ISO under UEFI with a completely blank virtual target.
-          # The marker disk opts the initrd into CI mode; the blank disk is the
-          # actual installation target. No host disk can be touched.
-          set +e
-          timeout 240s qemu-system-x86_64             -machine q35,accel=tcg             -m 4096             -smp 2             -vga std             -bios /usr/share/OVMF/OVMF_CODE_4M.fd             -drive format=raw,file="$DISK",if=none,id=g1os_target             -device ich9-ahci,id=g1os_sata             -device ide-hd,drive=g1os_target,bus=g1os_sata.2             -drive format=raw,file="$MARKER",if=none,id=g1os_ci_marker             -device ide-hd,drive=g1os_ci_marker,bus=g1os_sata.3             -drive format=raw,file=out/G1OS.iso,if=ide,media=cdrom             -boot d             -serial stdio             -display none             -no-reboot             2>&1 | tee "$LOG"
-          QEMU_RC=${PIPESTATUS[0]}
-          set -e
+          # Boot the real ISO under UEFI with isolated target and marker disks.
+          # The harness enforces ordered serial milestones and a 60s no-output
+          # watchdog; the 240s ceiling is unchanged from the prior CI command.
+          LOG="$PWD/out/qemu-real-install-serial.log"
+          python3 scripts/qemu-boot-test.py \
+            --serial-log "$LOG" \
+            --qemu-log out/qemu-real-install-qemu.log \
+            --command-log out/qemu-real-install-command.txt \
+            --ready-token "G1OS_BOOT: ci-install-ready" \
+            --require-stage "G1OS_BOOT: kernel-start" \
+            --require-stage "G1OS_BOOT: initramfs-start" \
+            --require-stage "G1OS_BOOT: udev-start" \
+            --require-stage "G1OS_BOOT: udev-ready" \
+            --require-stage "G1OS_BOOT: rootfs-mounted" \
+            --require-stage "G1OS_BOOT: disks-ready" \
+            --require-stage "G1OS_BOOT: ci-install-start" \
+            --require-stage "G1OS_BOOT: ci-install-ready" \
+            --shutdown-on-ready --timeout 240 --stall-timeout 60 -- \
+            qemu-system-x86_64 \
+              -machine q35,accel=tcg \
+              -m 4096 \
+              -smp 2 \
+              -vga std \
+              -bios /usr/share/OVMF/OVMF_CODE_4M.fd \
+              -drive format=raw,file="$DISK",if=none,id=g1os_target \
+              -device ich9-ahci,id=g1os_sata \
+              -device ide-hd,drive=g1os_target,bus=g1os_sata.2 \
+              -drive format=raw,file="$MARKER",if=none,id=g1os_ci_marker \
+              -device ide-hd,drive=g1os_ci_marker,bus=g1os_sata.3 \
+              -drive format=raw,file=out/G1OS.iso,if=ide,media=cdrom \
+              -boot d -display none -no-reboot -net none
           # The kernel command line comes from the real ISO/GRUB path. CI mode
           # is selected by the isolated G1OS_CI marker disk, detected in initramfs.
           if ! grep -F "CI installation integration mode enabled" "$LOG" >/dev/null; then
@@ -325,10 +352,6 @@ jobs:
             echo "ERROR: CI installer did not select the isolated target disk /dev/sda." >&2
             tail -200 "$LOG" >&2 || true
             exit 1
-          }
-          [ "$QEMU_RC" -eq 0 ] || [ "$QEMU_RC" -eq 124 ] || {
-            echo "ERROR: real installation VM failed with exit code $QEMU_RC" >&2
-            exit "$QEMU_RC"
           }
           grep -F "CI real installation backend completed successfully" "$LOG" >/dev/null
           grep -F "CI installation reached authoritative COMPLETED state" "$LOG" >/dev/null
@@ -356,58 +379,90 @@ jobs:
           sudo losetup -d "$LOOP_DEV"
           LOOP_DEV=""
 
-          # Second boot is from the installed disk only. This validates the
-          # actual installed UEFI -> GRUB -> kernel -> initramfs -> root/data
-          # resolution path, rather than only validating the live ISO.
-          set +e
-          timeout 180s qemu-system-x86_64             -machine q35,accel=tcg             -m 4096             -smp 2             -vga std             -bios /usr/share/OVMF/OVMF_CODE_4M.fd             -drive format=raw,file="$DISK",if=none,id=g1os_target             -device ich9-ahci,id=g1os_sata             -device ide-hd,drive=g1os_target,bus=g1os_sata.2             -serial stdio             -display none             -no-reboot             2>&1 | tee -a "$LOG"
-          QEMU_BOOT_RC=${PIPESTATUS[0]}
-          set -e
+          # Second boot validates installed UEFI -> GRUB -> kernel -> initrd ->
+          # root/data mounts -> responsive installed compositor, then QMP exits.
+          python3 scripts/qemu-boot-test.py \
+            --serial-log out/qemu-installed-serial.log \
+            --qemu-log out/qemu-installed-qemu.log \
+            --command-log out/qemu-installed-command.txt \
+            --ready-token G1OS_READY \
+            --require-stage "G1OS_BOOT: kernel-start" \
+            --require-stage "G1OS_BOOT: initramfs-start" \
+            --require-stage "Persistent data filesystem mounted" \
+            --require-stage "Installed root filesystem verified" \
+            --require-stage "G1OS_BOOT: rootfs-mounted" \
+            --require-stage "G1OS_BOOT: disks-ready" \
+            --require-stage "G1OS_BOOT: services-start" \
+            --require-stage "G1OS_BOOT: ui-start" \
+            --require-stage "Installed G1OS compositor IPC endpoint ready" \
+            --require-stage "G1OS_BOOT: ready" \
+            --shutdown-on-ready --timeout 180 --stall-timeout 60 -- \
+            qemu-system-x86_64 \
+              -machine q35,accel=tcg -m 4096 -smp 2 -vga std \
+              -bios /usr/share/OVMF/OVMF_CODE_4M.fd \
+              -drive format=raw,file="$DISK",if=none,id=g1os_target \
+              -device ich9-ahci,id=g1os_sata \
+              -device ide-hd,drive=g1os_target,bus=g1os_sata.2 \
+              -display none -no-reboot -net none
+              LOG="$PWD/out/qemu-installed-serial.log"
+          LOG="$PWD/out/qemu-installed-serial.log"
           grep -F "Installed root filesystem verified" "$LOG" >/dev/null
           grep -F "Persistent data filesystem mounted" "$LOG" >/dev/null
-          grep -F "Starting installed G1OS compositor" "$LOG" >/dev/null
+          grep -F "Installed G1OS compositor IPC endpoint ready" "$LOG" >/dev/null
           if grep -Eiq "kernel panic|kernel BUG|cannot mount installed root|persistent data filesystem.*could not be resolved|real G1OS kernel image not found|initramfs.*not found" "$LOG"; then
             echo "ERROR: installed-boot integration log contains a fatal boot/install error." >&2
             exit 1
           fi
-          [ "$QEMU_BOOT_RC" -eq 0 ] || [ "$QEMU_BOOT_RC" -eq 124 ] || {
-            echo "ERROR: installed-disk UEFI boot failed with exit code $QEMU_BOOT_RC" >&2
-            exit "$QEMU_BOOT_RC"
-          }
           echo "PASS: real ISO installation + installed-disk UEFI boot integration test completed."
           echo "PASS: no host disk was used; target was isolated QEMU virtual storage."
 
-      - name: Boot ISO under real UEFI QEMU and require graphical installer readiness
+      - name: Boot ISO in safe and normal graphics modes and require G1OS_READY
         working-directory: macliteos
         run: |
           set -eu
-          timeout 60s qemu-system-x86_64 \
-            -machine q35,accel=tcg \
-            -m 2048 \
-            -smp 2 \
-            -vga std \
-            -bios /usr/share/OVMF/OVMF_CODE_4M.fd \
-            -drive format=raw,file=out/G1OS.iso,if=ide,media=cdrom \
-            -boot d \
-            -serial stdio \
-            -display none \
-            -no-reboot \
-            2>&1 | tee out/qemu-uefi-console.log || rc=$?
-          rc=${rc:-0}
-          if grep -F "Graphical installer ready: compositor responsive and installer surface present" out/qemu-uefi-console.log >/dev/null; then
-            echo "PASS: QEMU UEFI reached the real graphical installer health gate."
-          elif grep -qi "panic\|kernel BUG\|\[FAIL\]" out/qemu-uefi-console.log; then
-            echo "ERROR: QEMU UEFI boot reported a kernel/init/graphics failure." >&2
-            exit 1
-          else
-            echo "ERROR: QEMU UEFI boot did not prove graphical installer readiness." >&2
-            tail -200 out/qemu-uefi-console.log >&2 || true
-            exit 1
-          fi
-          [ "$rc" -eq 0 ] || [ "$rc" -eq 124 ] || exit "$rc"
+          qemu_common=(
+            -machine q35,accel=tcg -m 2048 -smp 2 -vga std
+            -bios /usr/share/OVMF/OVMF_CODE_4M.fd
+            -drive format=raw,file=out/G1OS.iso,if=ide,media=cdrom
+            -boot d -display none -no-reboot -net none
+          )
+          readiness_before_graphics=(
+            --require-stage "G1OS_BOOT: kernel-start"
+            --require-stage "G1OS_BOOT: initramfs-start"
+            --require-stage "G1OS_BOOT: udev-start"
+            --require-stage "G1OS_BOOT: udev-ready"
+          )
+          readiness_after_graphics=(
+            --require-stage "G1OS_BOOT: rootfs-mounted"
+            --require-stage "G1OS_BOOT: disks-ready"
+            --require-stage "G1OS_BOOT: services-start"
+            --require-stage "G1OS_BOOT: ui-start"
+            --require-stage "G1OS_BOOT: ready"
+          )
+          python3 scripts/qemu-boot-test.py \
+            --serial-log out/qemu-safe-serial.log \
+            --qemu-log out/qemu-safe-qemu.log \
+            --command-log out/qemu-safe-command.txt \
+            --ready-token G1OS_READY --shutdown-on-ready \
+            --timeout 240 --stall-timeout 30 \
+            "${readiness_before_graphics[@]}" \
+            --require-stage "G1OS_BOOT: graphics-safe" \
+            "${readiness_after_graphics[@]}" -- \
+            qemu-system-x86_64 "${qemu_common[@]}"
+          python3 scripts/qemu-boot-test.py \
+            --serial-log out/qemu-normal-serial.log \
+            --qemu-log out/qemu-normal-qemu.log \
+            --command-log out/qemu-normal-command.txt \
+            --ready-token G1OS_READY --shutdown-on-ready --menu-steps 2 \
+            --timeout 240 --stall-timeout 30 \
+            "${readiness_before_graphics[@]}" \
+            --require-stage "G1OS_BOOT: graphics-normal" \
+            "${readiness_after_graphics[@]}" -- \
+            qemu-system-x86_64 "${qemu_common[@]}"
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: G1OS-build
           path: |
@@ -422,4 +477,13 @@ jobs:
             macliteos/out/g1os-kernel-manifest.txt
             macliteos/out/g1os-kernel.sha256
             macliteos/out/g1os-initrd-manifest.txt
-            macliteos/out/qemu-uefi-console.log
+            macliteos/out/qemu-*-serial.log
+            macliteos/out/qemu-*-qemu.log
+            macliteos/out/qemu-*-command.txt
+            macliteos/out/qemu-*-disk-info.txt
+            macliteos/out/qemu-*-partitions.txt
+            macliteos/out/qemu-*-filesystems.txt
+            macliteos/out/g1os-initrd-manifest.txt
+            macliteos/out/g1os-kernel-manifest.txt
+            macliteos/boot/kernel-cmdline.txt
+            macliteos/boot/grub-efi.cfg

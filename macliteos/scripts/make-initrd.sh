@@ -26,9 +26,9 @@ done
 cp "$BUSYBOX" "$W/bin/busybox"
 chmod 0755 "$W/bin/busybox"
 "$W/bin/busybox" --install -s "$W/bin" 2>/dev/null || true
-for applet in mount umount mkdir cat grep sed sh modprobe blkid switch_root chroot \
-              fdisk losetup dd partprobe blockdev sync awk sleep dmesg ls cp mv rm touch \
-              mktemp mkfs.vfat mkdosfs mkfs.ext2 mkfs.ext4 mke2fs find which head tail wc tr cut \
+for applet in mount umount mkdir cat grep sed sh modprobe switch_root chroot \
+              losetup dd partprobe blockdev sync awk sleep dmesg ls cp mv rm touch chmod ln \
+              mktemp mkfs.ext2 find which head tail wc tr cut \
               sort uniq uname ip ifconfig ping udhcpc wget reboot poweroff halt env expr dirname basename \
               readlink realpath date id ps kill setsid cttyhack sha256sum; do
     ln -sf /bin/busybox "$W/bin/$applet" 2>/dev/null || true
@@ -36,16 +36,79 @@ for applet in mount umount mkdir cat grep sed sh modprobe blkid switch_root chro
 done
 
 # Do not let a missing BusyBox applet become a runtime-only boot failure.
-for applet in mount umount mkdir cat grep sed sh modprobe blkid switch_root chroot \
-              fdisk losetup dd partprobe blockdev sync awk sleep dmesg ls cp mv rm touch \
-              mktemp mkfs.vfat mkdosfs mkfs.ext2 mkfs.ext4 mke2fs find which head tail wc tr cut \
+for applet in mount umount mkdir cat grep sed sh modprobe switch_root chroot \
+              losetup dd partprobe blockdev sync awk sleep dmesg ls cp mv rm touch chmod ln \
+              mktemp mkfs.ext2 find which head tail wc tr cut \
               sort uniq uname ip ifconfig ping udhcpc wget reboot poweroff halt env expr dirname basename \
               readlink realpath date id ps kill setsid cttyhack sha256sum; do
+    "$W/bin/busybox" --list 2>/dev/null | grep -qx "$applet" || {
+        echo "ERROR: configured BusyBox does not implement required applet: $applet" >&2
+        exit 3
+    }
     [ -e "$W/bin/$applet" ] || [ -e "$W/sbin/$applet" ] || {
         echo "ERROR: BusyBox applet missing from initramfs build: $applet" >&2
         exit 3
     }
 done
+if ! "$W/bin/busybox" sha256sum /dev/null >/dev/null 2>&1; then
+    echo "ERROR: BusyBox sha256sum applet is required for installer boot-manifest verification" >&2
+    exit 3
+fi
+
+# The installer feeds util-linux sfdisk syntax to the partitioner. BusyBox's
+# fdisk/sfdisk applets are not compatible with that scripted interface.
+for partition_tool in blkid fdisk sfdisk; do
+    rm -f "$W/bin/$partition_tool" "$W/sbin/$partition_tool" "$W/usr/bin/$partition_tool"
+    tool_path=$(command -v "$partition_tool" 2>/dev/null || true)
+    if [ -n "$tool_path" ] && [ -x "$tool_path" ]; then
+        cp -L "$tool_path" "$W/usr/bin/$partition_tool"
+        chmod 0755 "$W/usr/bin/$partition_tool"
+    fi
+done
+[ -x "$W/usr/bin/sfdisk" ] || {
+    echo "ERROR: util-linux sfdisk is required to build an installable G1OS initramfs" >&2
+    exit 3
+}
+"$W/usr/bin/sfdisk" --version >/dev/null 2>&1 || {
+    echo "ERROR: staged sfdisk is not a runnable util-linux executable" >&2
+    exit 3
+}
+[ -x "$W/usr/bin/blkid" ] || {
+    echo "ERROR: util-linux blkid is required for reliable UUID/PARTUUID lookup" >&2
+    exit 3
+}
+"$W/usr/bin/blkid" --version >/dev/null 2>&1 || {
+    echo "ERROR: staged blkid is not a runnable util-linux executable" >&2
+    exit 3
+}
+
+for filesystem_tool in mkfs.vfat mkdosfs mkfs.ext4 mke2fs; do
+    rm -f "$W/bin/$filesystem_tool" "$W/sbin/$filesystem_tool" "$W/usr/bin/$filesystem_tool"
+    tool_path=$(command -v "$filesystem_tool" 2>/dev/null || true)
+    if [ -n "$tool_path" ] && [ -x "$tool_path" ]; then
+        cp -L "$tool_path" "$W/usr/bin/$filesystem_tool"
+        chmod 0755 "$W/usr/bin/$filesystem_tool"
+    fi
+done
+[ -x "$W/usr/bin/mkfs.vfat" ] || [ -x "$W/usr/bin/mkdosfs" ] || {
+    echo "ERROR: dosfstools mkfs.vfat/mkdosfs is required to build an installable G1OS initramfs" >&2
+    exit 3
+}
+[ -x "$W/usr/bin/mkfs.ext4" ] || [ -x "$W/usr/bin/mke2fs" ] || {
+    echo "ERROR: e2fsprogs mkfs.ext4/mke2fs is required to build an installable G1OS initramfs" >&2
+    exit 3
+}
+if [ -x "$W/usr/bin/mkfs.ext4" ]; then
+    "$W/usr/bin/mkfs.ext4" -V >/dev/null 2>&1 || {
+        echo "ERROR: staged mkfs.ext4 is not a runnable e2fsprogs executable" >&2
+        exit 3
+    }
+else
+    "$W/usr/bin/mke2fs" -V >/dev/null 2>&1 || {
+        echo "ERROR: staged mke2fs is not a runnable e2fsprogs executable" >&2
+        exit 3
+    }
+fi
 
 while read -r pat; do
     case "$pat" in \#*|"") continue ;; esac
@@ -88,14 +151,14 @@ while read -r pat; do
     [ "$found" = 1 ] || { echo "ERROR: initrd.list entry has no matching source: $pat" >&2; exit 4; }
 done < boot/initrd.list
 
-for opt_applet in mknod mdev partx sfdisk findfs blkid blockdev sync; do
+for opt_applet in mknod mdev partx findfs blockdev sync; do
     if "$W/bin/busybox" --list 2>/dev/null | grep -qx "$opt_applet"; then
         ln -sf /bin/busybox "$W/bin/$opt_applet" 2>/dev/null || true
         ln -sf /bin/busybox "$W/sbin/$opt_applet" 2>/dev/null || true
     fi
 done
 
-for extra_tool in findmnt lsblk sfdisk sgdisk parted partprobe udevadm mknod partx wipefs findfs blkid blockdev sync; do
+for extra_tool in findmnt lsblk sfdisk sgdisk parted partprobe mknod partx wipefs findfs blkid blockdev sync; do
     for tool_path in "/usr/sbin/$extra_tool" "/sbin/$extra_tool" "/usr/bin/$extra_tool" "/bin/$extra_tool"; do
         if [ -x "$tool_path" ] && [ ! -e "$W/usr/bin/$extra_tool" ] && [ ! -e "$W/bin/$extra_tool" ] && [ ! -e "$W/sbin/$extra_tool" ]; then
             dest_dir="$W/usr/bin"
