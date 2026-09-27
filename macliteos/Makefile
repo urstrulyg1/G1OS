@@ -1,6 +1,8 @@
 # MacLiteOS build. Everything is C11 + libc; optional accelerators come from
 # out/config.mk (run ./configure first — build.sh does it for you).
-CC      ?= gcc
+ifeq ($(origin CC),default)
+CC      := gcc
+endif
 OUT     := out
 -include $(OUT)/config.mk
 
@@ -8,6 +10,12 @@ CFLAGS  := -std=gnu11 -O2 -g -Wall -Wextra -Wno-unused-parameter -Wno-unused-fun
            -Icore/include -I. $(ML_EXTRA_CFLAGS) -fno-strict-aliasing
 LDLIBS  := $(ML_EXTRA_LIBS) -lm -lpthread -ldl
 HEADER_DEPS := $(wildcard core/include/*.h core/include/ml/*.h hardware/*.h compositor/*.h compositor/client/*.h)
+
+ifeq ($(OS),Windows_NT)
+MKDIR_P = if not exist "$(subst /,\\,$(dir $@))" mkdir "$(subst /,\\,$(dir $@))"
+else
+MKDIR_P = mkdir -p $(dir $@)
+endif
 
 CORE_SRC := $(wildcard core/src/*.c)
 CORE_OBJ := $(patsubst core/src/%.c,$(OUT)/core/%.o,$(CORE_SRC))
@@ -44,20 +52,20 @@ iso:
 all: core hw bins apps tools tests
 core: $(LIB)
 $(LIB): $(CORE_OBJ)
-	@mkdir -p $(dir $@)
+	@$(MKDIR_P)
 	ar rcs $@ $^
 hw: $(HWLIB)
 $(HWLIB): $(HW_OBJ)
-	@mkdir -p $(dir $@)
+	@$(MKDIR_P)
 	ar rcs $@ $^
 $(OUT)/core/%.o: core/src/%.c $(HEADER_DEPS)
-	@mkdir -p $(dir $@)
+	@$(MKDIR_P)
 	$(CC) $(CFLAGS) -c $< -o $@
 $(OUT)/hw/%.o: hardware/%.c $(HEADER_DEPS)
-	@mkdir -p $(dir $@)
+	@$(MKDIR_P)
 	$(CC) $(CFLAGS) -c $< -o $@
 $(OUT)/client/%.o: compositor/client/%.c $(HEADER_DEPS)
-	@mkdir -p $(dir $@)
+	@$(MKDIR_P)
 	$(CC) $(CFLAGS) -c $< -o $@
 $(OUT)/mica-comp: compositor/comp.c $(HWLIB) $(LIB)
 	$(CC) $(CFLAGS) $(filter-out $(HEADER_DEPS),$^) -o $@ $(LDLIBS)
