@@ -32,8 +32,8 @@ type Snapshot = {
 
 const API = "https://api.github.com";
 const RUNS_URL = `${API}/repos/urstrulyg1/G1OS/actions/workflows/g1os-build.yml/runs?branch=main&per_page=10`;
-const ACTIVE_POLL_MS = 5000;
-const IDLE_POLL_MS = 30000;
+const ACTIVE_POLL_MS = 120000;
+const IDLE_POLL_MS = 300000;
 const STALE_AFTER_MS = 15000;
 
 function statusLabel(status: string, conclusion: string | null) {
@@ -51,6 +51,7 @@ export function BuildProgress() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const snapshotRef = useRef<Snapshot | null>(null);
   const runEtag = useRef<string | null>(null);
   const jobsEtag = useRef<string | null>(null);
   const knownRunId = useRef<number | null>(null);
@@ -72,11 +73,13 @@ export function BuildProgress() {
   const fetchRunAndJobs = useCallback(async () => {
     try {
       const runs = await fetchJson<{ workflow_runs: Run[] }>(RUNS_URL, runEtag);
-      const candidates = runs?.workflow_runs ?? (snapshot?.run ? [snapshot.run] : []);
+      const currentSnapshot = snapshotRef.current;
+      const candidates = runs?.workflow_runs ?? (currentSnapshot?.run ? [currentSnapshot.run] : []);
       const active = candidates.find((run) => run.status === "in_progress" || run.status === "queued");
       const run = active ?? candidates[0];
 
       if (!run) {
+        snapshotRef.current = null;
         setSnapshot(null);
         setError(null);
         return false;
@@ -93,17 +96,24 @@ export function BuildProgress() {
       );
 
       if (jobs) {
-        setSnapshot({ run, jobs: jobs.jobs, observedAt: Date.now() });
-      } else if (snapshot && snapshot.run.id === run.id) {
-        setSnapshot((current) => current ? { ...current, observedAt: Date.now() } : current);
+        const nextSnapshot = { run, jobs: jobs.jobs, observedAt: Date.now() };
+        snapshotRef.current = nextSnapshot;
+        setSnapshot(nextSnapshot);
+      } else if (currentSnapshot && currentSnapshot.run.id === run.id) {
+        setSnapshot((current) => {
+          if (!current) return current;
+          const nextSnapshot = { ...current, observedAt: Date.now() };
+          snapshotRef.current = nextSnapshot;
+          return nextSnapshot;
+        });
       }
       setError(null);
       return run.status !== "completed";
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to read build status");
-      return Boolean(snapshot && snapshot.run.status !== "completed");
+      return Boolean(snapshotRef.current && snapshotRef.current.run.status !== "completed");
     }
-  }, [fetchJson, snapshot]);
+  }, [fetchJson]);
 
   useEffect(() => {
     let cancelled = false;
