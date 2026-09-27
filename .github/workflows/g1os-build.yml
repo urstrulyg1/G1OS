@@ -374,8 +374,8 @@ jobs:
           grep -F "/var/data" /mnt/g1os-ci-root/etc/fstab >/dev/null
           grep -F "root=UUID=" /mnt/g1os-ci-efi/EFI/BOOT/grub.cfg >/dev/null
           grep -F "initrd /boot/initrd-g1os.img" /mnt/g1os-ci-efi/EFI/BOOT/grub.cfg >/dev/null
-          umount /mnt/g1os-ci-root
-          umount /mnt/g1os-ci-efi
+          sudo umount /mnt/g1os-ci-root
+          sudo umount /mnt/g1os-ci-efi
           sudo losetup -d "$LOOP_DEV"
           LOOP_DEV=""
 
