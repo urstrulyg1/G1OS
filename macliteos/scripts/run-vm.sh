@@ -4,7 +4,7 @@
 # on a machine with qemu it boots the ISO with virtio-gl off (software path).
 set -e
 cd "$(dirname "$0")/.."
-ISO=${1:-out/MacLiteOS.iso}
+ISO=${1:-out/G1OS.iso}
 [ -f "$ISO" ] || { echo "no ISO at $ISO — run scripts/build.sh or scripts/make-iso.sh first"; exit 1; }
 MEM=${MEM:-1024}          # prove the 150-300 MB idle budget with room to spare
 command -v qemu-system-x86_64 >/dev/null || { echo "qemu-system-x86_64 not installed"; exit 1; }

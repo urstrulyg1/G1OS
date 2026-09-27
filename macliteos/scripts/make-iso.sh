@@ -192,6 +192,7 @@ cp "$ST/boot/bootx64.efi" "$ST/EFI/BOOT/bootx64.efi"
 cp "$ST/boot/grub.cfg" "$ST/EFI/BOOT/grub.cfg"
 cp "$ST/boot/grub.cfg" "$ST/boot/grub/grub.cfg"
 
+need mmd
 need mcopy
 need mkfs.vfat
 EFI_CATALOG="boot/efi.img"
@@ -237,11 +238,11 @@ if [ "$VERIFY" = 1 ]; then
   [ -s "$EXTRACT/boot/initrd-maclite.img" ] || { echo "VERIFY = FAIL: extracted initramfs empty" >&2; exit 12; }
   [ -s "$EXTRACT/boot/g1os-boot-manifest.txt" ] || { echo "VERIFY = FAIL: boot manifest missing" >&2; exit 12; }
   grep -F "G1OS_BOOT_MANIFEST=1" "$EXTRACT/boot/g1os-boot-manifest.txt" >/dev/null || { echo "VERIFY = FAIL: invalid boot manifest" >&2; exit 13; }
-  grep -F "build_id=$BUILD_ID" "$EXTRACT/boot/g1os-boot-manifest.txt" >/dev/null
+  grep -F "build_id=$BUILD_ID" "$EXTRACT/boot/g1os-boot-manifest.txt" >/dev/null || { echo "VERIFY = FAIL: boot manifest build ID mismatch" >&2; exit 13; }
   grep -F "G1OS_KERNEL_MANIFEST=1" "$EXTRACT/boot/g1os-kernel-manifest.txt" >/dev/null || { echo "VERIFY = FAIL: kernel artifact manifest missing" >&2; exit 13; }
   grep -F "G1OS_INITRD_MANIFEST=1" "$EXTRACT/boot/g1os-initrd-manifest.txt" >/dev/null || { echo "VERIFY = FAIL: initramfs artifact manifest missing" >&2; exit 13; }
   grep -F "artifact_sha256=$EXPECTED_KERNEL_SHA" "$EXTRACT/boot/g1os-kernel-manifest.txt" >/dev/null || { echo "VERIFY = FAIL: kernel artifact manifest checksum mismatch" >&2; exit 13; }
-  grep -F "artifact_sha256=$EXPECTED_INITRD_SHA" "$EXTRACT/boot/g1os-initrd-manifest.txt" >/dev/null || { echo "VERIFY = FAIL: initramfs artifact manifest checksum mismatch" >&2; exit 13; } || { echo "VERIFY = FAIL: boot manifest build ID mismatch" >&2; exit 13; }
+  grep -F "artifact_sha256=$EXPECTED_INITRD_SHA" "$EXTRACT/boot/g1os-initrd-manifest.txt" >/dev/null || { echo "VERIFY = FAIL: initramfs artifact manifest checksum mismatch" >&2; exit 13; }
   manifest_kernel_sha=$(sed -n 's/^kernel_sha256=//p' "$EXTRACT/boot/g1os-boot-manifest.txt")
   manifest_initrd_sha=$(sed -n 's/^initrd_sha256=//p' "$EXTRACT/boot/g1os-boot-manifest.txt")
   [ "$manifest_kernel_sha" = "$KERNEL_SHA256" ] || { echo "VERIFY = FAIL: boot manifest kernel checksum mismatch" >&2; exit 13; }

@@ -143,7 +143,7 @@ if [ "$GPU_NAME" = "none" ] && command -v lspci >/dev/null 2>&1; then
 fi
 
 GIT_COMMIT=$(git log -1 --format="%h (%ci)" 2>/dev/null || cat VERSION 2>/dev/null || echo "unknown")
-ISO_FILE="out/MacLiteOS.iso"
+ISO_FILE="out/G1OS.iso"
 if [ -f "$ISO_FILE" ]; then
     ISO_INFO="$(ls -lh "$ISO_FILE" 2>/dev/null | awk '{print $9 " (" $5 ")"}')"
 else

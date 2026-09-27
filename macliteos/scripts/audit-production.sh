@@ -8,7 +8,7 @@ FAIL=0
 pass(){ echo "PASS: $*"; }
 fail(){ echo "FAIL: $*" >&2; FAIL=1; }
 need_file(){ if [ -e "$1" ]; then pass "source present: $1"; else fail "source missing: $1"; fi }
-need_exec(){ if [ -x "$1" ] || [ -s "$1" ]; then pass "executable present: $1"; else fail "executable missing: $1"; fi }
+need_exec(){ if [ -x "$1" ]; then pass "executable present: $1"; else fail "executable missing: $1"; fi }
 
 for f in \
   boot/g1os-init boot/g1os-ui-health.c boot/g1os-failure-ui.c boot/grub-efi.cfg \

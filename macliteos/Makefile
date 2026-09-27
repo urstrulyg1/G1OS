@@ -32,7 +32,12 @@ TESTS := $(OUT)/test_render $(OUT)/test_units $(OUT)/test_idle $(OUT)/test_leak 
          $(OUT)/test_hardware $(OUT)/test_installer $(OUT)/test_cursor_damage \
          $(OUT)/test_cursor_render
 
-.PHONY: all core hw bins apps tools tests clean
+.PHONY: all build test iso core hw bins apps tools tests clean
+build: all
+test: all
+	sh scripts/run-tests.sh
+iso:
+	sh scripts/build.sh
 all: core hw bins apps tools tests
 core: $(LIB)
 $(LIB): $(CORE_OBJ)
@@ -132,6 +137,7 @@ $(OUT)/test_leak: tests/test_leak.c $(LIB)
 $(OUT)/test_hardware: tests/test_hardware.c $(HWLIB) $(LIB)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDLIBS)
 $(OUT)/test_installer: tests/test_installer.c $(HWLIB) $(LIB)
+	$(CC) $(CFLAGS) $^ -o $@ $(LDLIBS)
 $(OUT)/test_cursor_damage: tests/test_cursor_damage.c $(LIB)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDLIBS)
 $(OUT)/test_cursor_render: tests/test_cursor_render.c $(LIB)

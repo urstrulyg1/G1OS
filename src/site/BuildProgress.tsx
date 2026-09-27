@@ -31,7 +31,7 @@ type Snapshot = {
 };
 
 const API = "https://api.github.com";
-const RUNS_URL = `${API}/repos/urstrulyg1/MacOSLite/actions/workflows/g1os-build.yml/runs?branch=main&per_page=10`;
+const RUNS_URL = `${API}/repos/urstrulyg1/G1OS/actions/workflows/g1os-build.yml/runs?branch=main&per_page=10`;
 const ACTIVE_POLL_MS = 5000;
 const IDLE_POLL_MS = 30000;
 const STALE_AFTER_MS = 15000;
@@ -88,7 +88,7 @@ export function BuildProgress() {
       }
 
       const jobs = await fetchJson<{ jobs: Job[] }>(
-        `${API}/repos/urstrulyg1/MacOSLite/actions/runs/${run.id}/jobs?per_page=100`,
+        `${API}/repos/urstrulyg1/G1OS/actions/runs/${run.id}/jobs?per_page=100`,
         jobsEtag,
       );
 
