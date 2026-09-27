@@ -433,6 +433,46 @@ require_partition_nodes() {
   done
 }
 
+refresh_partition_devices() {
+  [ "$DRY_RUN" = 1 ] && return 0
+  sync
+  if command -v udevadm >/dev/null 2>&1; then
+    udevadm settle --timeout=5 2>/dev/null || true
+  fi
+  if command -v partx >/dev/null 2>&1; then
+    partx -u "$DEV" 2>/dev/null || partx -a "$DEV" 2>/dev/null || true
+  fi
+  require_partition_nodes
+}
+
+format_ext4_partition() {
+  label="$1"
+  part="$2"
+  attempt=1
+  while [ "$attempt" -le 3 ]; do
+    if [ "$DRY_RUN" = 1 ]; then
+      return 0
+    fi
+    if command -v mkfs.ext4 >/dev/null 2>&1; then
+      echo "+ mkfs.ext4 -F -L $label $part"
+      if mkfs.ext4 -F -L "$label" "$part"; then
+        return 0
+      fi
+    else
+      echo "+ mke2fs -t ext4 -F -L $label $part"
+      if mke2fs -t ext4 -F -L "$label" "$part"; then
+        return 0
+      fi
+    fi
+    status=$?
+    echo "WARNING: ext4 formatting failed for $part (attempt $attempt/3, exit $status); refreshing partition devices." >&2
+    refresh_partition_devices
+    sleep 1
+    attempt=$((attempt + 1))
+  done
+  fail "unable to format $part as ext4 after 3 attempts"
+}
+
 # Detect partitioning utility
 PART_TOOL=""
 if command -v sfdisk >/dev/null 2>&1; then
@@ -638,13 +678,9 @@ if [ "$REPAIR_MODE" = 0 ]; then
     else
       run mkdosfs -F 32 -n MACLITE_BOOT "$DEV_BOOT" 2>/dev/null || run mkdosfs -n MACLITE_BOOT "$DEV_BOOT"
     fi
-    if command -v mkfs.ext4 >/dev/null 2>&1; then
-      run mkfs.ext4 -F -L MACLITE_DATA "$DEV_DATA" 2>/dev/null || run mke2fs -t ext4 -F -L MACLITE_DATA "$DEV_DATA"
-      run mkfs.ext4 -F -L MACLITE_BASE "$DEV_BASE" 2>/dev/null || run mke2fs -t ext4 -F -L MACLITE_BASE "$DEV_BASE"
-    else
-      run mke2fs -t ext4 -F -L MACLITE_DATA "$DEV_DATA" 2>/dev/null || run mke2fs -F -L MACLITE_DATA "$DEV_DATA"
-      run mke2fs -t ext4 -F -L MACLITE_BASE "$DEV_BASE" 2>/dev/null || run mke2fs -F -L MACLITE_BASE "$DEV_BASE"
-    fi
+    refresh_partition_devices
+    format_ext4_partition MACLITE_DATA "$DEV_DATA"
+    format_ext4_partition MACLITE_BASE "$DEV_BASE"
   fi
   require_partition_nodes
   BOOT_UUID=$(read_block_tag "$DEV_BOOT" UUID)
