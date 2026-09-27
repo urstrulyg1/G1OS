@@ -457,14 +457,17 @@ format_ext4_partition() {
       echo "+ mkfs.ext4 -F -L $label $part"
       if mkfs.ext4 -F -L "$label" "$part"; then
         return 0
+      else
+        status=$?
       fi
     else
       echo "+ mke2fs -t ext4 -F -L $label $part"
       if mke2fs -t ext4 -F -L "$label" "$part"; then
         return 0
+      else
+        status=$?
       fi
     fi
-    status=$?
     echo "WARNING: ext4 formatting failed for $part (attempt $attempt/3, exit $status); refreshing partition devices." >&2
     refresh_partition_devices
     sleep 1
