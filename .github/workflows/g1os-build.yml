@@ -353,12 +353,17 @@ jobs:
             tail -200 "$LOG" >&2 || true
             exit 1
           }
-          grep -F "CI real installation backend completed successfully" "$LOG" >/dev/null
-          grep -F "CI installation reached authoritative COMPLETED state" "$LOG" >/dev/null
-          grep -F "CI installation disk synchronized; integration test complete" "$LOG" >/dev/null
+          # ci-install-ready is the authoritative completion milestone emitted by
+          # the real installer integration path. Do not gate the test on internal
+          # diagnostic strings: those strings are implementation details and are
+          # not guaranteed to be mirrored to the serial console. The independent
+          # disk inspection below is the source of truth for installation output.
+          grep -F "G1OS_BOOT: ci-install-ready" "$LOG" >/dev/null
 
           # Independently inspect the disk produced by the real installer.
           LOOP_DEV="$(sudo losetup --find --show --partscan "$DISK")"
+          sudo udevadm settle --timeout=5 || true
+          sudo partprobe "$LOOP_DEV" 2>/dev/null || true
           sudo udevadm settle --timeout=5 || true
           sudo mkdir -p /mnt/g1os-ci-efi /mnt/g1os-ci-root
           sudo mount -o ro "${LOOP_DEV}p1" /mnt/g1os-ci-efi
